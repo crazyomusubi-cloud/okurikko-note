@@ -182,7 +182,7 @@ input, select, textarea {
 
 /* ===================== ログイン ===================== */
 
-.login {
+.view.active.login {
   min-height: 100vh;
   display: flex;
   align-items: center;
