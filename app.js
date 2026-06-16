@@ -39,6 +39,7 @@ let unsubs = [];
 let homeMode = 'year';
 let homeTypeFilter = 'all';
 let selectedYear = null;
+let returnFirst = false;
 let currentPersonDetailId = null;
 let editingRecordId = null;
 let recordType = 'received';
@@ -136,9 +137,13 @@ function getYears(records){
 }
 function renderHome(){
   document.querySelectorAll('#type-filter-tabs .chip-toggle').forEach(b=>{
-    b.classList.toggle('active', b.dataset.type===homeTypeFilter);
+    if(b.id === 'sort-return-btn'){
+      b.classList.toggle('active', returnFirst);
+    } else {
+      b.classList.toggle('active', b.dataset.type===homeTypeFilter);
+    }
   });
-  document.getElementById('filter-toggle-btn').classList.toggle('active', homeTypeFilter!=='all');
+  document.getElementById('filter-toggle-btn').classList.toggle('active', homeTypeFilter!=='all' || returnFirst);
 
   const list = document.getElementById('home-list');
   const yearTabs = document.getElementById('year-tabs');
@@ -159,8 +164,19 @@ function renderHome(){
   });
   yearTabs.innerHTML = tabsHtml;
 
+  function sortRecords(arr){
+    return [...arr].sort((a,b)=>{
+      if(returnFirst){
+        const aNeeds = (a.type==='received' && a.returnPlanned && !a.returnDone) ? 0 : 1;
+        const bNeeds = (b.type==='received' && b.returnPlanned && !b.returnDone) ? 0 : 1;
+        if(aNeeds !== bNeeds) return aNeeds - bNeeds;
+      }
+      return (b.date||'').localeCompare(a.date||'');
+    });
+  }
+
   if(homeMode==='list'){
-    const records = [...filtered].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    const records = sortRecords(filtered);
     if(!records.length){
       list.innerHTML = emptyStateHTML(`まだ${typeLabel}記録がありません`,'右下の＋ボタンから記録を追加しましょう。');
       return;
@@ -168,19 +184,25 @@ function renderHome(){
     let html=''; let lastYear=null;
     records.forEach(r=>{
       const y=(r.date||'').slice(0,4)||'未設定';
-      if(y!==lastYear){ html += `<div class="section-label">${esc(y)}年</div>`; lastYear=y; }
+      if(!returnFirst && y!==lastYear){ html += `<div class="section-label">${esc(y)}年</div>`; lastYear=y; }
       html += renderRecordCard(r);
     });
     list.innerHTML = html;
   } else {
-    const records = filtered.filter(r=> (r.date||'').slice(0,4)===selectedYear)
-      .sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    const records = sortRecords(filtered.filter(r=> (r.date||'').slice(0,4)===selectedYear));
     list.innerHTML = records.length ? records.map(renderRecordCard).join('')
       : emptyStateHTML(`この年の${typeLabel}記録はありません`,'右下の＋ボタンから記録を追加しましょう。');
   }
 }
 document.querySelectorAll('#type-filter-tabs .chip-toggle').forEach(b=>{
-  b.addEventListener('click', () => { homeTypeFilter = b.dataset.type; renderHome(); });
+  b.addEventListener('click', () => {
+    if(b.id === 'sort-return-btn'){
+      returnFirst = !returnFirst;
+    } else {
+      homeTypeFilter = b.dataset.type;
+    }
+    renderHome();
+  });
 });
 document.getElementById('filter-toggle-btn').addEventListener('click', () => {
   document.getElementById('type-filter-tabs').classList.toggle('hidden');
