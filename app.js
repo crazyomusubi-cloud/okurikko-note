@@ -582,6 +582,7 @@ function setRecordType(type){
   document.getElementById('record-return-section').classList.toggle('hidden', !isReceived);
   document.getElementById('record-stock-picker-wrap').classList.toggle('hidden', isReceived);
   document.getElementById('record-stock-list').classList.add('hidden');
+  if(typeof populateRecordPersonSelects === 'function') populateRecordPersonSelects();
 }
 document.querySelectorAll('#record-type-toggle button').forEach(b=>{
   b.addEventListener('click', () => setRecordType(b.dataset.type));
@@ -592,9 +593,11 @@ function renderChips(containerId, selections, isFamily){
     return `<span class="chip ${isFamily?'family':''}">${esc(name)}<button type="button" class="chip-remove" data-list="${containerId}" data-idx="${idx}">×</button></span>`;
   }).join('');
 }
-function personPickerItemsHtml(excludeIds){
+function personPickerItemsHtml(excludeIds, familyOnly){
   const groupRank = (p)=>{ const i = PERSON_GROUPS.indexOf(p.group||'その他'); return i<0 ? PERSON_GROUPS.length : i; };
-  const sorted = [...allPeople].filter(p=>!excludeIds.includes(p.id)).sort((a,b)=>{
+  let pool = allPeople.filter(p=>!excludeIds.includes(p.id));
+  if(familyOnly) pool = pool.filter(p=>(p.group||'')==='家族');
+  const sorted = pool.sort((a,b)=>{
     const gr = groupRank(a) - groupRank(b);
     if(gr !== 0) return gr;
     return (a.name||'').localeCompare(b.name||'','ja');
@@ -603,14 +606,19 @@ function personPickerItemsHtml(excludeIds){
     const note = [p.group, p.note].filter(Boolean).join(' ・ ');
     return `<button type="button" class="person-picker-item" data-id="${p.id}"><span class="ppi-name">${esc(p.name)}</span>${note?`<span class="ppi-note">${esc(note)}</span>`:''}</button>`;
   }).join('');
+  if(familyOnly && !sorted.length){
+    html = `<p class="muted" style="padding:11px 14px">「家族」グループに登録された人がいません。人物タブで家族を登録してください。</p>`;
+  }
   html += `<button type="button" class="person-picker-item ppi-new" data-id="__new__"><span class="ppi-name">＋ 新しい人を追加</span></button>`;
   return html;
 }
 function populateRecordPersonSelects(){
   const counterpartIds = counterpartSelections.filter(s=>s.id).map(s=>s.id);
   const familyIds = familySelections.filter(s=>s.id).map(s=>s.id);
-  document.getElementById('record-counterpart-list').innerHTML = personPickerItemsHtml(counterpartIds);
-  document.getElementById('record-family-list').innerHTML = personPickerItemsHtml(familyIds);
+  // 「もらった」のとき家族リスト(だれに)は家族グループのみ。「あげた」のときは制限なし。
+  const familyOnly = recordType === 'received';
+  document.getElementById('record-counterpart-list').innerHTML = personPickerItemsHtml(counterpartIds, false);
+  document.getElementById('record-family-list').innerHTML = personPickerItemsHtml(familyIds, familyOnly);
 }
 document.getElementById('record-counterpart-picker').addEventListener('click', ()=>{
   document.getElementById('record-family-list').classList.add('hidden');
