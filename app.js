@@ -30,6 +30,19 @@ try { enableIndexedDbPersistence(db); } catch (e) { /* 複数タブ等は無視 
 // ----- 定数 -----
 const CATEGORIES = ["誕生日","クリスマス","入学・卒業祝い","出産祝い","結婚祝い","お中元","お歳暮","帰省土産","お見舞い","その他"];
 const PRICE_RANGES = ["〜1,000円","1,000〜3,000円","3,000〜5,000円","5,000〜10,000円","10,000円〜"];
+const PERSON_GROUPS = ["家族","親族","友人・知人","ご近所","仕事関係","その他"];
+
+// ----- ピンチ/ダブルタップズーム抑制(iOS対策) -----
+document.addEventListener('gesturestart', (e)=> e.preventDefault());
+document.addEventListener('gesturechange', (e)=> e.preventDefault());
+document.addEventListener('gestureend', (e)=> e.preventDefault());
+document.addEventListener('touchmove', (e)=>{ if(e.touches.length > 1) e.preventDefault(); }, {passive:false});
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e)=>{
+  const now = Date.now();
+  if(now - lastTouchEnd <= 300) e.preventDefault();
+  lastTouchEnd = now;
+}, {passive:false});
 
 // ----- 状態 -----
 let allPeople = [];
@@ -90,14 +103,55 @@ function emptyStateHTML(title, desc){
 function openSheet(id){
   document.getElementById('backdrop').classList.add('show');
   document.getElementById(id).classList.add('show');
+  document.getElementById('app').classList.add('sheet-open');
 }
 function closeSheet(id){
   document.getElementById('backdrop').classList.remove('show');
   document.getElementById(id).classList.remove('show');
+  syncSheetOpenState();
+}
+function syncSheetOpenState(){
+  const anyOpen = !!document.querySelector('.sheet.show');
+  document.getElementById('app').classList.toggle('sheet-open', anyOpen);
 }
 document.getElementById('backdrop').addEventListener('click', () => {
   ['record-sheet','person-sheet','stock-sheet','return-confirm-sheet','stock-link-sheet','stock-use-confirm-sheet','stock-unuse-confirm-sheet'].forEach(id => document.getElementById(id).classList.remove('show'));
   document.getElementById('backdrop').classList.remove('show');
+  syncSheetOpenState();
+});
+
+// シートをハンドルの下スワイプで閉じる
+document.querySelectorAll('.sheet').forEach(sheet=>{
+  const handle = sheet.querySelector('.sheet-handle');
+  if(!handle) return;
+  let startY = 0, currentY = 0, dragging = false;
+  const onStart = (y)=>{ startY = y; currentY = y; dragging = true; sheet.style.transition = 'none'; };
+  const onMove = (y)=>{
+    if(!dragging) return;
+    currentY = y;
+    const dy = Math.max(0, currentY - startY);
+    sheet.style.transform = `translateX(-50%) translateY(${dy}px)`;
+  };
+  const onEnd = ()=>{
+    if(!dragging) return;
+    dragging = false;
+    sheet.style.transition = '';
+    sheet.style.transform = '';
+    const dy = currentY - startY;
+    if(dy > 90){
+      sheet.classList.remove('show');
+      document.getElementById('backdrop').classList.remove('show');
+      syncSheetOpenState();
+    }
+  };
+  handle.addEventListener('touchstart', (e)=>{ onStart(e.touches[0].clientY); }, {passive:true});
+  handle.addEventListener('touchmove', (e)=>{ onMove(e.touches[0].clientY); }, {passive:true});
+  handle.addEventListener('touchend', onEnd);
+  handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY);
+    const mm = (ev)=>onMove(ev.clientY);
+    const mu = ()=>{ onEnd(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+  });
 });
 
 // ----- ナビゲーション -----
@@ -253,10 +307,28 @@ function renderRecordCard(r){
 
 // ----- 人物 -----
 function renderPeople(){
-  const sorted = [...allPeople].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ja'));
-  document.getElementById('people-list').innerHTML = sorted.length
-    ? sorted.map(renderPersonCard).join('')
-    : emptyStateHTML('まだ登録がありません','右上の＋ボタンから人物を登録しましょう。');
+  const container = document.getElementById('people-list');
+  if(!allPeople.length){
+    container.innerHTML = emptyStateHTML('まだ登録がありません','右上の＋ボタンから人物を登録しましょう。');
+    return;
+  }
+  let html = '';
+  const groupOrder = [...PERSON_GROUPS];
+  groupOrder.forEach(g=>{
+    const members = allPeople.filter(p=>(p.group||'その他')===g)
+      .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ja'));
+    if(!members.length) return;
+    html += `<div class="section-label">${esc(g)}</div>`;
+    html += members.map(renderPersonCard).join('');
+  });
+  // 既知グループに当てはまらないものを末尾に
+  const others = allPeople.filter(p=>!groupOrder.includes(p.group||'その他'))
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ja'));
+  if(others.length){
+    html += `<div class="section-label">その他</div>`;
+    html += others.map(renderPersonCard).join('');
+  }
+  container.innerHTML = html;
 }
 function renderPersonCard(p){
   const initial = (p.name||'?').slice(0,1);
@@ -521,8 +593,16 @@ function renderChips(containerId, selections, isFamily){
   }).join('');
 }
 function personPickerItemsHtml(excludeIds){
-  const sorted = [...allPeople].filter(p=>!excludeIds.includes(p.id)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ja'));
-  let html = sorted.map(p=>`<button type="button" class="person-picker-item" data-id="${p.id}"><span class="ppi-name">${esc(p.name)}</span>${p.note?`<span class="ppi-note">${esc(p.note)}</span>`:''}</button>`).join('');
+  const groupRank = (p)=>{ const i = PERSON_GROUPS.indexOf(p.group||'その他'); return i<0 ? PERSON_GROUPS.length : i; };
+  const sorted = [...allPeople].filter(p=>!excludeIds.includes(p.id)).sort((a,b)=>{
+    const gr = groupRank(a) - groupRank(b);
+    if(gr !== 0) return gr;
+    return (a.name||'').localeCompare(b.name||'','ja');
+  });
+  let html = sorted.map(p=>{
+    const note = [p.group, p.note].filter(Boolean).join(' ・ ');
+    return `<button type="button" class="person-picker-item" data-id="${p.id}"><span class="ppi-name">${esc(p.name)}</span>${note?`<span class="ppi-note">${esc(note)}</span>`:''}</button>`;
+  }).join('');
   html += `<button type="button" class="person-picker-item ppi-new" data-id="__new__"><span class="ppi-name">＋ 新しい人を追加</span></button>`;
   return html;
 }
@@ -630,7 +710,7 @@ async function resolveSelections(selections){
   for(const s of selections){
     if(s.id){ ids.push(s.id); }
     else {
-      const ref = await addDoc(collection(db,'people'), { name: s.newName, note: '', userId: auth.currentUser.uid, createdAt: serverTimestamp() });
+      const ref = await addDoc(collection(db,'people'), { name: s.newName, group: 'その他', note: '', userId: auth.currentUser.uid, createdAt: serverTimestamp() });
       ids.push(ref.id);
     }
   }
@@ -726,6 +806,7 @@ function openPersonSheet(person=null){
   editingPersonId = person ? person.id : null;
   document.getElementById('person-sheet-title').textContent = person ? '人物を編集' : '人物を追加';
   document.getElementById('person-name').value = person ? person.name : '';
+  document.getElementById('person-group').value = (person && person.group && PERSON_GROUPS.includes(person.group)) ? person.group : PERSON_GROUPS[0];
   document.getElementById('person-note').value = person ? (person.note||'') : '';
   document.getElementById('person-error').textContent = '';
   document.getElementById('person-delete').classList.toggle('hidden', !person);
@@ -736,7 +817,11 @@ document.getElementById('person-save').addEventListener('click', async () => {
   const name = document.getElementById('person-name').value.trim();
   const errEl = document.getElementById('person-error');
   if(!name){ errEl.textContent = '名前を入力してください。'; return; }
-  const data = { name, note: document.getElementById('person-note').value.trim() };
+  const data = {
+    name,
+    group: document.getElementById('person-group').value,
+    note: document.getElementById('person-note').value.trim()
+  };
   try{
     if(editingPersonId){
       await updateDoc(doc(db,'people',editingPersonId), data);
@@ -894,6 +979,7 @@ function openStockHistory(stockId){
   document.getElementById('record-category').innerHTML = CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   document.getElementById('stock-category').innerHTML = `<option value="">(なし)</option>` + CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   document.getElementById('stock-price-range').innerHTML = PRICE_RANGES.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  document.getElementById('person-group').innerHTML = PERSON_GROUPS.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
 })();
 
 // ----- データ購読 -----
@@ -1032,8 +1118,8 @@ function exportAllCsv(){
     ]);
   });
 
-  const peopleRows = [['名前','備考']];
-  allPeople.forEach(p=> peopleRows.push([p.name||'', p.note||'']));
+  const peopleRows = [['名前','グループ','備考']];
+  allPeople.forEach(p=> peopleRows.push([p.name||'', p.group||'', p.note||'']));
 
   const stockRows = [['品物名','価格帯','カテゴリ','メモ','使用済み','あげた実績件数','あげた実績']];
   allStock.forEach(s=>{

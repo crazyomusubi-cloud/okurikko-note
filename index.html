@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#F7F1EA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -305,6 +305,11 @@
     </div>
 
     <div class="field">
+      <label for="person-group">グループ</label>
+      <select id="person-group"></select>
+    </div>
+
+    <div class="field">
       <label for="person-note">備考(関係性などメモ)</label>
       <input type="text" id="person-note" placeholder="例: 義理の母 / 子どもの友人 など">
     </div>
@@ -432,7 +437,7 @@
       <span class="nav-label">ストック</span>
     </button>
   </nav>
-  <button id="fab-add" class="fab" aria-label="記録を追加">＋</button>
+  <button id="fab-add" class="fab" aria-label="記録を追加">+</button>
 
 </div>
 <script type="module" src="app.js"></script>
