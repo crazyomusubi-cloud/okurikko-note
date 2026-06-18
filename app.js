@@ -61,6 +61,7 @@ let familySelections = [];
 let editingPersonId = null;
 let editingStockId = null;
 let returnConfirmRecordId = null;
+let formReturnGivenItems = [];
 let linkingStockId = null;
 let pendingStockId = null;
 let selectedStockId = null;
@@ -106,12 +107,14 @@ function openSheet(id){
   document.getElementById('app').classList.add('sheet-open');
 }
 function closeSheet(id){
-  document.getElementById('backdrop').classList.remove('show');
   document.getElementById(id).classList.remove('show');
-  syncSheetOpenState();
+  const anyOpen = !!document.querySelector('.sheet.show');
+  document.getElementById('backdrop').classList.toggle('show', anyOpen);
+  document.getElementById('app').classList.toggle('sheet-open', anyOpen);
 }
 function syncSheetOpenState(){
   const anyOpen = !!document.querySelector('.sheet.show');
+  document.getElementById('backdrop').classList.toggle('show', anyOpen);
   document.getElementById('app').classList.toggle('sheet-open', anyOpen);
 }
 document.getElementById('backdrop').addEventListener('click', () => {
@@ -461,22 +464,37 @@ function renderUsedStockCard(s){
 }
 
 function openReturnConfirmSheet(recordId){
-  const r = allRecords.find(x=>x.id===recordId);
-  if(!r) return;
-  returnConfirmRecordId = recordId;
-  const candidates = (r.returnCandidates||[]).filter(c=>c && c.name);
+  let candidates, preChecked = [];
+  if(recordId === '__form__'){
+    returnConfirmRecordId = '__form__';
+    candidates = [1,2,3].map(i=>({
+      name: document.getElementById(`record-cand${i}-name`).value.trim(),
+      price: document.getElementById(`record-cand${i}-price`).value,
+      shop: document.getElementById(`record-cand${i}-shop`).value.trim()
+    })).filter(c=>c.name);
+    preChecked = formReturnGivenItems;
+  } else {
+    const r = allRecords.find(x=>x.id===recordId);
+    if(!r) return;
+    returnConfirmRecordId = recordId;
+    candidates = (r.returnCandidates||[]).filter(c=>c && c.name);
+    preChecked = r.returnGivenItems || [];
+  }
   const container = document.getElementById('return-confirm-candidates');
   if(candidates.length){
     container.innerHTML = candidates.map(c=>{
       let detail = '';
       if(c.price!=null && c.price!=='') detail += ` ・ ¥${Number(c.price).toLocaleString()}`;
       if(c.shop) detail += ` ・ ${esc(c.shop)}`;
-      return `<label class="checkbox-row"><input type="checkbox" class="return-confirm-cand" value="${esc(c.name)}"> ${esc(c.name)}${detail}</label>`;
+      const checked = preChecked.includes(c.name) ? 'checked' : '';
+      return `<label class="checkbox-row"><input type="checkbox" class="return-confirm-cand" value="${esc(c.name)}" ${checked}> ${esc(c.name)}${detail}</label>`;
     }).join('');
   } else {
     container.innerHTML = `<p class="muted">候補は登録されていません。下の欄に贈ったものを入力してください。</p>`;
   }
-  document.getElementById('return-confirm-other').value = '';
+  // 候補にない既存の品目をその他欄に表示
+  const extra = preChecked.filter(it=>!candidates.some(c=>c.name===it));
+  document.getElementById('return-confirm-other').value = extra.join('、');
   document.getElementById('return-confirm-error').textContent = '';
   openSheet('return-confirm-sheet');
 }
@@ -484,14 +502,26 @@ document.getElementById('return-confirm-save').addEventListener('click', async (
   const errEl = document.getElementById('return-confirm-error');
   const items = [...document.querySelectorAll('.return-confirm-cand:checked')].map(el=>el.value);
   const other = document.getElementById('return-confirm-other').value.trim();
-  if(other) items.push(other);
+  if(other) other.split(/[、,]/).map(s=>s.trim()).filter(Boolean).forEach(s=>items.push(s));
   if(items.length===0){ errEl.textContent = '贈ったものを選択または入力してください。'; return; }
+  if(returnConfirmRecordId === '__form__'){
+    formReturnGivenItems = items;
+    document.getElementById('record-return-done').checked = true;
+    closeSheet('return-confirm-sheet');
+    return;
+  }
   try{
     await updateDoc(doc(db,'records',returnConfirmRecordId), { returnDone: true, returnGivenItems: items });
     closeSheet('return-confirm-sheet');
   }catch(err){ errEl.textContent = '更新に失敗しました: '+err.message; }
 });
-document.getElementById('return-confirm-cancel').addEventListener('click', () => closeSheet('return-confirm-sheet'));
+document.getElementById('return-confirm-cancel').addEventListener('click', () => {
+  if(returnConfirmRecordId === '__form__'){
+    // フォームの「お返し済み」チェックを元に戻す(品目未確定なら外す)
+    document.getElementById('record-return-done').checked = formReturnGivenItems.length > 0;
+  }
+  closeSheet('return-confirm-sheet');
+});
 
 // ----- クリック委譲 -----
 document.addEventListener('click', (e) => {
@@ -699,6 +729,7 @@ function openRecordSheet(record=null){
   }
   document.getElementById('record-return-date').value = record ? (record.returnDate||'') : '';
   document.getElementById('record-return-done').checked = record ? !!record.returnDone : false;
+  formReturnGivenItems = (record && record.returnGivenItems) ? [...record.returnGivenItems] : [];
   const returnPlanned = record ? !!record.returnPlanned : false;
   document.getElementById('record-return-planned').checked = returnPlanned;
   document.getElementById('record-return-details').classList.toggle('hidden', !returnPlanned);
@@ -712,6 +743,13 @@ document.getElementById('record-category').addEventListener('change', (e)=>{
 });
 document.getElementById('record-return-planned').addEventListener('change', (e)=>{
   document.getElementById('record-return-details').classList.toggle('hidden', !e.target.checked);
+});
+document.getElementById('record-return-done').addEventListener('change', (e)=>{
+  if(e.target.checked){
+    openReturnConfirmSheet('__form__');
+  } else {
+    formReturnGivenItems = [];
+  }
 });
 async function resolveSelections(selections){
   const ids = [];
@@ -770,7 +808,7 @@ document.getElementById('record-save').addEventListener('click', async () => {
     });
     data.returnDate = document.getElementById('record-return-date').value || null;
     data.returnDone = document.getElementById('record-return-done').checked;
-    data.returnGivenItems = (existingRecord && existingRecord.returnGivenItems) || [];
+    data.returnGivenItems = data.returnDone ? formReturnGivenItems : [];
   } else {
     data.returnPlanned = false;
     data.returnCandidates = [];
