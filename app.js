@@ -49,10 +49,27 @@ let allPeople = [];
 let allRecords = [];
 let allStock = [];
 let unsubs = [];
-let homeMode = 'year';
-let homeTypeFilter = 'all';
-let selectedYear = null;
-let returnFirst = false;
+const HOME_FILTER_KEY = 'okurikko_home_filter';
+function loadHomeFilterState(){
+  try{
+    const raw = localStorage.getItem(HOME_FILTER_KEY);
+    if(!raw) return {};
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  }catch(e){ return {}; }
+}
+function saveHomeFilterState(){
+  try{
+    localStorage.setItem(HOME_FILTER_KEY, JSON.stringify({
+      homeMode, homeTypeFilter, returnFirst, selectedYear
+    }));
+  }catch(e){ /* ストレージ不可な環境は無視 */ }
+}
+const savedHomeFilter = loadHomeFilterState();
+let homeMode = savedHomeFilter.homeMode === 'list' ? 'list' : 'year';
+let homeTypeFilter = ['all','received','given'].includes(savedHomeFilter.homeTypeFilter) ? savedHomeFilter.homeTypeFilter : 'all';
+let selectedYear = savedHomeFilter.selectedYear || null;
+let returnFirst = !!savedHomeFilter.returnFirst;
 let currentPersonDetailId = null;
 let editingRecordId = null;
 let recordType = 'received';
@@ -70,6 +87,12 @@ let currentStockHistoryId = null;
 // ----- ユーティリティ -----
 function esc(str){
   return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function normalizeUrl(input){
+  const v = (input||'').trim();
+  if(!v) return '';
+  if(/^https?:\/\//i.test(v)) return v;
+  return 'https://' + v;
 }
 function todayStr(){
   const d = new Date();
@@ -193,6 +216,7 @@ function getYears(records){
   return Array.from(years).sort((a,b)=> b.localeCompare(a));
 }
 function renderHome(){
+  saveHomeFilterState();
   document.querySelectorAll('#type-filter-tabs .chip-toggle').forEach(b=>{
     if(b.id === 'sort-return-btn'){
       b.classList.toggle('active', returnFirst);
@@ -425,6 +449,7 @@ function renderStockCard(s){
   const histBtn = (s.linkedRecordIds||[]).length
     ? `<div class="stock-used-actions"><button type="button" class="btn-small" data-action="view-stock-history" data-id="${s.id}">あげた実績を見る (${s.linkedRecordIds.length}件)</button></div>`
     : '';
+  const urlLink = s.url ? `<a class="stock-link" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗 商品ページを見る</a>` : '';
   return `
   <div class="stock-card">
     <button class="checkbox-circle" data-action="use-stock" data-id="${s.id}">✓</button>
@@ -435,6 +460,7 @@ function renderStockCard(s){
           <div class="stock-meta">${esc(s.category||'')}${s.memo ? ' ・ '+esc(s.memo) : ''}</div>
         </div>
       </button>
+      ${urlLink}
       ${histBtn}
     </div>
   </div>`;
@@ -444,6 +470,7 @@ function renderUsedStockCard(s){
   const histBtn = count
     ? `<button type="button" class="btn-small" data-action="view-stock-history" data-id="${s.id}">あげた実績を見る (${count}件)</button>`
     : '';
+  const urlLink = s.url ? `<a class="stock-link" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗 商品ページを見る</a>` : '';
   return `
   <div class="stock-card stock-used">
     <span class="checkbox-circle checked">✓</span>
@@ -454,6 +481,7 @@ function renderUsedStockCard(s){
           <div class="stock-meta">${esc(s.category||'')}${s.memo ? ' ・ '+esc(s.memo) : ''}</div>
         </div>
       </button>
+      ${urlLink}
       <div class="stock-used-actions">
         ${histBtn}
         <button type="button" class="btn-small" data-action="link-stock" data-id="${s.id}">あげた記録を選ぶ</button>
@@ -911,6 +939,7 @@ function openStockSheet(stock=null){
   }
 
   document.getElementById('stock-memo').value = stock ? (stock.memo||'') : '';
+  document.getElementById('stock-url').value = stock ? (stock.url||'') : '';
   document.getElementById('stock-used').checked = stock ? !!stock.used : false;
   document.getElementById('stock-error').textContent = '';
   document.getElementById('stock-delete').classList.toggle('hidden', !stock);
@@ -918,6 +947,9 @@ function openStockSheet(stock=null){
 }
 document.getElementById('stock-category').addEventListener('change', (e)=>{
   document.getElementById('stock-category-custom-wrap').classList.toggle('hidden', e.target.value!=='その他');
+});
+document.getElementById('stock-url').addEventListener('blur', (e)=>{
+  e.target.value = normalizeUrl(e.target.value);
 });
 document.getElementById('stock-save').addEventListener('click', async () => {
   const itemName = document.getElementById('stock-item').value.trim();
@@ -933,6 +965,7 @@ document.getElementById('stock-save').addEventListener('click', async () => {
     priceRange: document.getElementById('stock-price-range').value,
     category,
     memo: document.getElementById('stock-memo').value.trim(),
+    url: normalizeUrl(document.getElementById('stock-url').value),
     used: document.getElementById('stock-used').checked,
   };
   try{
@@ -1167,14 +1200,14 @@ function exportAllCsv(){
   const peopleRows = [['名前','グループ','備考']];
   allPeople.forEach(p=> peopleRows.push([p.name||'', p.group||'', p.note||'']));
 
-  const stockRows = [['品物名','価格帯','カテゴリ','メモ','使用済み','あげた実績件数','あげた実績']];
+  const stockRows = [['品物名','価格帯','カテゴリ','メモ','URL','使用済み','あげた実績件数','あげた実績']];
   allStock.forEach(s=>{
     const histories = (s.linkedRecordIds||[]).map(id=>{
       const r = allRecords.find(x=>x.id===id);
       return r ? `${r.date||''} ${namesOf(r.counterpartIds)}` : '';
     }).filter(Boolean);
     stockRows.push([
-      s.itemName||'', s.priceRange||'', s.category||'', s.memo||'',
+      s.itemName||'', s.priceRange||'', s.category||'', s.memo||'', s.url||'',
       s.used ? 'はい' : 'いいえ', histories.length, histories.join(' / ')
     ]);
   });
@@ -1206,7 +1239,6 @@ onAuthStateChanged(auth, (user) => {
     document.getElementById('view-login').classList.remove('active');
     document.getElementById('main').classList.add('active');
     attachListeners();
-    homeMode = 'year'; selectedYear = null;
     switchView('home');
   } else {
     detachListeners();
