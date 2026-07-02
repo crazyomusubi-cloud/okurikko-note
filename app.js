@@ -319,6 +319,18 @@ function renderRecordCard(r){
   if(isReceived && r.returnDone && (r.returnGivenItems||[]).length){
     titleHtml += ` → ${esc(r.returnGivenItems.join('・'))}`;
   }
+  let candidatesHtml = '';
+  if(needsReturn){
+    const cands = (r.returnCandidates||[]).filter(c=>c && c.name);
+    if(cands.length){
+      candidatesHtml = `<div class="return-candidates-preview">` + cands.map(c=>{
+        let line = `<span class="rcp-name">${esc(c.name)}</span>`;
+        if(c.price!=null && c.price!=='') line += `<span class="rcp-price">¥${Number(c.price).toLocaleString()}</span>`;
+        if(c.url) line += `<a class="rcp-link" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗</a>`;
+        return `<div class="rcp-row">${line}</div>`;
+      }).join('') + `</div>`;
+    }
+  }
   return `
   <div class="tag-card ${isReceived?'':'given'} ${needsReturn?'needs-return':''}" data-id="${r.id}" data-kind="record">
     <div class="tag-card-row">
@@ -328,6 +340,7 @@ function renderRecordCard(r){
     </div>
     <div class="tag-card-title">${titleHtml}</div>
     <div class="tag-card-people">${peopleLine}</div>
+    ${candidatesHtml}
     <div class="tag-card-bottom">${priceHtml}${returnBadge}</div>
   </div>`;
 }
@@ -498,7 +511,8 @@ function openReturnConfirmSheet(recordId){
     candidates = [1,2,3].map(i=>({
       name: document.getElementById(`record-cand${i}-name`).value.trim(),
       price: document.getElementById(`record-cand${i}-price`).value,
-      shop: document.getElementById(`record-cand${i}-shop`).value.trim()
+      shop: document.getElementById(`record-cand${i}-shop`).value.trim(),
+      url: document.getElementById(`record-cand${i}-url`).value.trim()
     })).filter(c=>c.name);
     preChecked = formReturnGivenItems;
   } else {
@@ -754,6 +768,7 @@ function openRecordSheet(record=null){
     document.getElementById(`record-cand${i}-name`).value = c.name || '';
     document.getElementById(`record-cand${i}-price`).value = (c.price!=null) ? c.price : '';
     document.getElementById(`record-cand${i}-shop`).value = c.shop || '';
+    document.getElementById(`record-cand${i}-url`).value = c.url || '';
   }
   document.getElementById('record-return-date').value = record ? (record.returnDate||'') : '';
   document.getElementById('record-return-done').checked = record ? !!record.returnDone : false;
@@ -832,7 +847,8 @@ document.getElementById('record-save').addEventListener('click', async () => {
       const name = document.getElementById(`record-cand${i}-name`).value.trim();
       const pRaw = document.getElementById(`record-cand${i}-price`).value;
       const shop = document.getElementById(`record-cand${i}-shop`).value.trim();
-      return { name, price: pRaw==='' ? null : Number(pRaw), shop };
+      const url = normalizeUrl(document.getElementById(`record-cand${i}-url`).value);
+      return { name, price: pRaw==='' ? null : Number(pRaw), shop, url };
     });
     data.returnDate = document.getElementById('record-return-date').value || null;
     data.returnDone = document.getElementById('record-return-done').checked;
@@ -950,6 +966,11 @@ document.getElementById('stock-category').addEventListener('change', (e)=>{
 });
 document.getElementById('stock-url').addEventListener('blur', (e)=>{
   e.target.value = normalizeUrl(e.target.value);
+});
+[1,2,3].forEach(i=>{
+  document.getElementById(`record-cand${i}-url`).addEventListener('blur', (e)=>{
+    e.target.value = normalizeUrl(e.target.value);
+  });
 });
 document.getElementById('stock-save').addEventListener('click', async () => {
   const itemName = document.getElementById('stock-item').value.trim();
@@ -1174,6 +1195,7 @@ function candStr(c){
   let s = c.name;
   if(c.price!=null && c.price!=='') s += `(¥${Number(c.price).toLocaleString()})`;
   if(c.shop) s += ` @${c.shop}`;
+  if(c.url) s += ` [${c.url}]`;
   return s;
 }
 function exportAllCsv(){
