@@ -598,8 +598,23 @@ input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-top: 4px;
 }
+.tag-card-bottom .price { margin-right: auto; }
+
+.cand-toggle-btn {
+  border: 1px solid var(--rose-deep);
+  background: var(--paper);
+  color: var(--rose-deep);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.cand-toggle-btn:active { opacity: .7; }
 
 .price {
   font-size: 15px;

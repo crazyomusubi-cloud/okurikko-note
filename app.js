@@ -320,10 +320,12 @@ function renderRecordCard(r){
     titleHtml += ` → ${esc(r.returnGivenItems.join('・'))}`;
   }
   let candidatesHtml = '';
+  let candToggleBtn = '';
   if(needsReturn){
     const cands = (r.returnCandidates||[]).filter(c=>c && c.name);
     if(cands.length){
-      candidatesHtml = `<div class="return-candidates-preview">` + cands.map(c=>{
+      candToggleBtn = `<button type="button" class="cand-toggle-btn" data-action="toggle-candidates" data-id="${r.id}">お返し候補を表示 ▾</button>`;
+      candidatesHtml = `<div class="return-candidates-preview hidden" id="cand-preview-${r.id}">` + cands.map(c=>{
         let line = `<span class="rcp-name">${esc(c.name)}</span>`;
         if(c.price!=null && c.price!=='') line += `<span class="rcp-price">¥${Number(c.price).toLocaleString()}</span>`;
         if(c.url) line += `<a class="rcp-link" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗</a>`;
@@ -340,8 +342,8 @@ function renderRecordCard(r){
     </div>
     <div class="tag-card-title">${titleHtml}</div>
     <div class="tag-card-people">${peopleLine}</div>
+    <div class="tag-card-bottom">${priceHtml}${candToggleBtn}${returnBadge}</div>
     ${candidatesHtml}
-    <div class="tag-card-bottom">${priceHtml}${returnBadge}</div>
   </div>`;
 }
 
@@ -569,6 +571,17 @@ document.getElementById('return-confirm-cancel').addEventListener('click', () =>
 document.addEventListener('click', (e) => {
   const markReturned = e.target.closest('[data-action="mark-returned"]');
   if(markReturned){ openReturnConfirmSheet(markReturned.dataset.id); return; }
+
+  const toggleCand = e.target.closest('[data-action="toggle-candidates"]');
+  if(toggleCand){
+    const preview = document.getElementById(`cand-preview-${toggleCand.dataset.id}`);
+    if(preview){
+      const willShow = preview.classList.contains('hidden');
+      preview.classList.toggle('hidden');
+      toggleCand.textContent = willShow ? 'お返し候補を隠す ▴' : 'お返し候補を表示 ▾';
+    }
+    return;
+  }
 
   const selectLink = e.target.closest('[data-action="select-link-record"]');
   if(selectLink){ linkStockToRecord(selectLink.dataset.id); return; }
